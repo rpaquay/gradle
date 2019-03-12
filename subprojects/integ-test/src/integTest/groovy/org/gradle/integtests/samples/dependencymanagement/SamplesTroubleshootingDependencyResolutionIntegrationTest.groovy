@@ -20,6 +20,7 @@ import org.gradle.integtests.fixtures.AbstractSampleIntegrationTest
 import org.gradle.integtests.fixtures.Sample
 import org.gradle.integtests.fixtures.UsesSample
 import org.junit.Rule
+import spock.lang.Ignore
 import spock.lang.Unroll
 
 class SamplesTroubleshootingDependencyResolutionIntegrationTest extends AbstractSampleIntegrationTest {
@@ -30,7 +31,7 @@ class SamplesTroubleshootingDependencyResolutionIntegrationTest extends Abstract
     Sample sample = new Sample(testDirectoryProvider)
 
     @Unroll
-    @UsesSample("userguide/dependencyManagement/troubleshooting/cache/changing")
+    @UsesSample("userguide/dependencyManagement/troubleshooting/cache/dynamic")
     def "can declare custom TTL for dependency with dynamic version"() {
 
         given:
@@ -47,6 +48,7 @@ class SamplesTroubleshootingDependencyResolutionIntegrationTest extends Abstract
         dsl << ['groovy', 'kotlin']
     }
 
+    @Ignore("Spring repo down and not mirrored")
     @Unroll
     @UsesSample("userguide/dependencyManagement/troubleshooting/cache/changing")
     def "can declare custom TTL for dependency with changing version"() {
