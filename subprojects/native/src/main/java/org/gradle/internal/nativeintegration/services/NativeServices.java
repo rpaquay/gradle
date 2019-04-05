@@ -251,6 +251,14 @@ public class NativeServices extends DefaultServiceRegistry implements ServiceReg
             }
         }
 
+        if ((operatingSystem.isWindows()) && useNativeIntegrations) {
+            try {
+                return new NativePlatformBackedFileMetadataAccessor(net.rubygrapefruit.platform.Native.get(Files.class));
+            } catch (NativeIntegrationUnavailableException e) {
+                LOGGER.debug("Native-platform files integration is not available. Continuing with fallback.");
+            }
+        }
+
         if (JavaVersion.current().isJava7Compatible()) {
             return newInstanceOrFallback("org.gradle.internal.nativeintegration.filesystem.jdk7.Jdk7FileMetadataAccessor", NativeServices.class.getClassLoader(), FallbackFileMetadataAccessor.class);
         }

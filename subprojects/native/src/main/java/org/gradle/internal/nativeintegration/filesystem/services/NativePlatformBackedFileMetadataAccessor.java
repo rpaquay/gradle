@@ -16,15 +16,19 @@
 
 package org.gradle.internal.nativeintegration.filesystem.services;
 
+import net.rubygrapefruit.platform.NativeException;
+import net.rubygrapefruit.platform.file.DirEntry;
 import net.rubygrapefruit.platform.file.FileInfo;
 import net.rubygrapefruit.platform.file.Files;
 import org.gradle.internal.file.FileMetadataSnapshot;
 import org.gradle.internal.nativeintegration.filesystem.DefaultFileMetadata;
+import org.gradle.internal.nativeintegration.filesystem.FileException;
 import org.gradle.internal.nativeintegration.filesystem.FileMetadataAccessor;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 
 public class NativePlatformBackedFileMetadataAccessor implements FileMetadataAccessor {
     private final Files files;
@@ -52,4 +56,22 @@ public class NativePlatformBackedFileMetadataAccessor implements FileMetadataAcc
     public FileMetadataSnapshot stat(Path path) throws IOException {
         return stat(path.toFile());
     }
+
+    FileInfo statFileInfo(File f) throws IOException {
+        try {
+            return files.stat(f, true);
+        } catch (NativeException e) {
+            throw new IOException(String.format("Could not get file mode for '%s'.", f), e);
+        }
+    }
+
+    List<? extends DirEntry> listDir(File dir, boolean linkTarget) throws IOException {
+        try {
+            return files.listDir(dir, linkTarget);
+        }
+        catch(NativeException e) {
+            throw new IOException(String.format("Could not get file mode for '%s'.", dir), e);
+        }
+    }
+
 }

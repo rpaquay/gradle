@@ -35,6 +35,7 @@ import org.gradle.internal.file.FileType;
 import org.gradle.internal.hash.FileHasher;
 import org.gradle.internal.hash.HashCode;
 import org.gradle.internal.nativeintegration.filesystem.FileSystem;
+import org.gradle.internal.nativeintegration.filesystem.FileSystemAccessor;
 import org.gradle.internal.snapshot.FileSystemLocationSnapshot;
 import org.gradle.internal.snapshot.FileSystemMirror;
 import org.gradle.internal.snapshot.FileSystemSnapshot;
@@ -65,6 +66,7 @@ public class DefaultFileSystemSnapshotter implements FileSystemSnapshotter {
     private final FileHasher hasher;
     private final StringInterner stringInterner;
     private final FileSystem fileSystem;
+    private final FileSystemAccessor fileSystemAccessor;
     private final FileSystemMirror fileSystemMirror;
     private final ProducerGuard<String> producingSnapshots = ProducerGuard.striped();
     private final DirectorySnapshotter directorySnapshotter;
@@ -73,8 +75,9 @@ public class DefaultFileSystemSnapshotter implements FileSystemSnapshotter {
         this.hasher = hasher;
         this.stringInterner = stringInterner;
         this.fileSystem = fileSystem;
+        this.fileSystemAccessor = fileSystem.createAccessor();
         this.fileSystemMirror = fileSystemMirror;
-        this.directorySnapshotter = new DirectorySnapshotter(hasher, fileSystem, stringInterner, defaultExcludes);
+        this.directorySnapshotter = new DirectorySnapshotter(hasher, this.fileSystemAccessor, stringInterner, defaultExcludes);
     }
 
     @Override

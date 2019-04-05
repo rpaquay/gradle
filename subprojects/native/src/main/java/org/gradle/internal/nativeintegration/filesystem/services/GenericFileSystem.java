@@ -19,11 +19,7 @@ import com.google.common.base.Charsets;
 import com.google.common.io.Files;
 import org.apache.commons.io.FileUtils;
 import org.gradle.internal.file.FileMetadataSnapshot;
-import org.gradle.internal.nativeintegration.filesystem.FileException;
-import org.gradle.internal.nativeintegration.filesystem.FileMetadataAccessor;
-import org.gradle.internal.nativeintegration.filesystem.FileModeAccessor;
-import org.gradle.internal.nativeintegration.filesystem.FileModeMutator;
-import org.gradle.internal.nativeintegration.filesystem.Symlink;
+import org.gradle.internal.nativeintegration.filesystem.*;
 import org.gradle.internal.nativeplatform.filesystem.FileSystem;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,6 +62,11 @@ class GenericFileSystem implements FileSystem {
     @Override
     public boolean isSymlink(File suspect) {
         return symlink.isSymlink(suspect);
+    }
+
+    @Override
+    public FileSystemAccessor createAccessor() {
+        return new GenericFileSystemAccessor(stat, metadata);
     }
 
     @Override

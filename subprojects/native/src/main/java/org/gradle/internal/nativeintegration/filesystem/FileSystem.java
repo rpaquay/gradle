@@ -62,4 +62,6 @@ public interface FileSystem extends Chmod, Stat {
      * @return true if symlink, false otherwise
      */
     boolean isSymlink(File suspect);
+
+    FileSystemAccessor createAccessor();
 }

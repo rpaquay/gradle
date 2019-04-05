@@ -31,12 +31,11 @@ import org.gradle.api.specs.Spec;
 import org.gradle.api.tasks.util.PatternSet;
 import org.gradle.internal.MutableBoolean;
 import org.gradle.internal.UncheckedException;
+import org.gradle.internal.file.FileMetadataSnapshot;
 import org.gradle.internal.file.FileType;
 import org.gradle.internal.hash.FileHasher;
 import org.gradle.internal.hash.HashCode;
-import org.gradle.internal.nativeintegration.filesystem.DefaultFileMetadata;
-import org.gradle.internal.nativeintegration.filesystem.FileSystem;
-import org.gradle.internal.nativeintegration.filesystem.Stat;
+import org.gradle.internal.nativeintegration.filesystem.*;
 import org.gradle.internal.snapshot.FileSystemLocationSnapshot;
 import org.gradle.internal.snapshot.MerkleDirectorySnapshotBuilder;
 import org.gradle.internal.snapshot.RegularFileSnapshot;
@@ -47,22 +46,19 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.nio.file.FileSystemLoopException;
-import java.nio.file.FileVisitOption;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.EnumSet;
 import java.util.List;
 
 public class DirectorySnapshotter {
     private final FileHasher hasher;
-    private final FileSystem fileSystem;
+    private final FileSystemAccessor fileSystem;
     private final StringInterner stringInterner;
     private final DefaultExcludes defaultExcludes;
 
-    public DirectorySnapshotter(FileHasher hasher, FileSystem fileSystem, StringInterner stringInterner, String... defaultExcludes) {
+    public DirectorySnapshotter(FileHasher hasher, FileSystemAccessor fileSystem, StringInterner stringInterner, String... defaultExcludes) {
         this.hasher = hasher;
         this.fileSystem = fileSystem;
         this.stringInterner = stringInterner;
@@ -75,47 +71,48 @@ public class DirectorySnapshotter {
         final MerkleDirectorySnapshotBuilder builder = MerkleDirectorySnapshotBuilder.sortingRequired();
 
         try {
-            Files.walkFileTree(rootPath, EnumSet.of(FileVisitOption.FOLLOW_LINKS), Integer.MAX_VALUE, new java.nio.file.FileVisitor<Path>() {
+            fileSystem.walkFileTree(rootPath.toFile(), EnumSet.of(FileSystemAccessor.FileVisitOption.FOLLOW_LINKS), Integer.MAX_VALUE, new FileSystemAccessor.FileVisitor<File>() {
                 @Override
-                public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attrs) {
-                    String name = stringInterner.intern(dir.getFileName().toString());
+                public FileSystemAccessor.FileVisitResult preVisitDirectory(File dir, FileMetadataSnapshot attrs) {
+                    String name = stringInterner.intern(dir.getName());
                     if (builder.isRoot() || isAllowed(dir, name, true, attrs, builder.getRelativePath())) {
                         builder.preVisitDirectory(internedAbsolutePath(dir), name);
-                        return FileVisitResult.CONTINUE;
+                        return FileSystemAccessor.FileVisitResult.CONTINUE;
                     } else {
-                        return FileVisitResult.SKIP_SUBTREE;
+                        return FileSystemAccessor.FileVisitResult.SKIP_SUBTREE;
                     }
                 }
 
                 @Override
-                public FileVisitResult visitFile(Path file, @Nullable BasicFileAttributes attrs) {
-                    String name = stringInterner.intern(file.getFileName().toString());
+                public FileSystemAccessor.FileVisitResult visitFile(File file, @Nullable FileMetadataSnapshot attrs) {
+                    String name = stringInterner.intern(file.getName());
                     if (isAllowed(file, name, false, attrs, builder.getRelativePath())) {
                         if (attrs == null) {
                             throw new GradleException(String.format("Cannot read file '%s': not authorized.", file));
                         }
-                        if (attrs.isSymbolicLink()) {
-                            // when FileVisitOption.FOLLOW_LINKS, we only get here when link couldn't be followed
-                            throw new GradleException(String.format("Could not list contents of '%s'. Couldn't follow symbolic link.", file));
-                        }
+                        // rpaquay: TODO
+//                        if (attrs.getType() == FileType.) {
+//                            // when FileVisitOption.FOLLOW_LINKS, we only get here when link couldn't be followed
+//                            throw new GradleException(String.format("Could not list contents of '%s'. Couldn't follow symbolic link.", file));
+//                        }
                         addFileSnapshot(file, name, attrs);
                     }
-                    return FileVisitResult.CONTINUE;
+                    return FileSystemAccessor.FileVisitResult.CONTINUE;
                 }
 
                 @Override
-                public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                public FileSystemAccessor.FileVisitResult visitFileFailed(File file, IOException exc) {
                     // File loop exceptions are ignored. When we encounter a loop (via symbolic links), we continue
                     // so we include all the other files apart from the loop.
                     // This way, we include each file only once.
-                    if (isNotFileSystemLoopException(exc) && isAllowed(file, file.getFileName().toString(), false, null, builder.getRelativePath())) {
+                    if (isNotFileSystemLoopException(exc) && isAllowed(file, file.getName(), false, null, builder.getRelativePath())) {
                         throw new GradleException(String.format("Could not read path '%s'.", file), exc);
                     }
-                    return FileVisitResult.CONTINUE;
+                    return FileSystemAccessor.FileVisitResult.CONTINUE;
                 }
 
                 @Override
-                public FileVisitResult postVisitDirectory(Path dir, @Nullable IOException exc) {
+                public FileSystemAccessor.FileVisitResult postVisitDirectory(File dir, @Nullable IOException exc) {
                     // File loop exceptions are ignored. When we encounter a loop (via symbolic links), we continue
                     // so we include all the other files apart from the loop.
                     // This way, we include each file only once.
@@ -123,26 +120,26 @@ public class DirectorySnapshotter {
                         throw new GradleException(String.format("Could not read directory path '%s'.", dir), exc);
                     }
                     builder.postVisitDirectory();
-                    return FileVisitResult.CONTINUE;
+                    return FileSystemAccessor.FileVisitResult.CONTINUE;
                 }
 
                 private boolean isNotFileSystemLoopException(@Nullable IOException e) {
                     return e != null && !(e instanceof FileSystemLoopException);
                 }
 
-                private void addFileSnapshot(Path file, String name, BasicFileAttributes attrs) {
+                private void addFileSnapshot(File file, String name, FileMetadataSnapshot attrs) {
                     Preconditions.checkNotNull(attrs, "Unauthorized access to %", file);
-                    DefaultFileMetadata metadata = new DefaultFileMetadata(FileType.RegularFile, attrs.lastModifiedTime().toMillis(), attrs.size());
-                    HashCode hash = hasher.hash(file.toFile(), metadata);
+                    DefaultFileMetadata metadata = new DefaultFileMetadata(FileType.RegularFile, attrs.getLastModified(), attrs.getLength());
+                    HashCode hash = hasher.hash(file, metadata);
                     RegularFileSnapshot fileSnapshot = new RegularFileSnapshot(internedAbsolutePath(file), name, hash, metadata.getLastModified());
                     builder.visit(fileSnapshot);
                 }
 
-                private String internedAbsolutePath(Path file) {
+                private String internedAbsolutePath(File file) {
                     return stringInterner.intern(file.toString());
                 }
 
-                private boolean isAllowed(Path path, String name, boolean isDirectory, @Nullable BasicFileAttributes attrs, Iterable<String> relativePath) {
+                private boolean isAllowed(File path, String name, boolean isDirectory, @Nullable FileMetadataSnapshot attrs, Iterable<String> relativePath) {
                     if (isDirectory) {
                         if (defaultExcludes.excludeDir(name)) {
                             return false;
@@ -236,14 +233,14 @@ public class DirectorySnapshotter {
     }
 
     private static class PathBackedFileTreeElement implements FileTreeElement {
-        private final Path path;
+        private final File path;
         private final String name;
         private final boolean isDirectory;
-        private final BasicFileAttributes attrs;
+        private final FileMetadataSnapshot attrs;
         private final Iterable<String> relativePath;
         private final Stat stat;
 
-        public PathBackedFileTreeElement(Path path, String name, boolean isDirectory, @Nullable BasicFileAttributes attrs, Iterable<String> relativePath, Stat stat) {
+        public PathBackedFileTreeElement(File path, String name, boolean isDirectory, @Nullable FileMetadataSnapshot attrs, Iterable<String> relativePath, Stat stat) {
             this.path = path;
             this.name = name;
             this.isDirectory = isDirectory;
@@ -254,7 +251,7 @@ public class DirectorySnapshotter {
 
         @Override
         public File getFile() {
-            return path.toFile();
+            return path;
         }
 
         @Override
@@ -264,22 +261,22 @@ public class DirectorySnapshotter {
 
         @Override
         public long getLastModified() {
-            return getAttributes().lastModifiedTime().toMillis();
+            return getAttributes().getLastModified();
         }
 
         @Override
         public long getSize() {
-            return getAttributes().size();
+            return getAttributes().getLength();
         }
 
-        private BasicFileAttributes getAttributes() {
+        private FileMetadataSnapshot getAttributes() {
             return Preconditions.checkNotNull(attrs, "Cannot read file attributes of %s", path);
         }
 
         @Override
         public InputStream open() {
             try {
-                return Files.newInputStream(path);
+                return Files.newInputStream(path.toPath());
             } catch (IOException e) {
                 throw UncheckedException.throwAsUncheckedException(e);
             }
@@ -319,7 +316,7 @@ public class DirectorySnapshotter {
 
         @Override
         public int getMode() {
-            return stat.getUnixMode(path.toFile());
+            return stat.getUnixMode(path);
         }
     }
 }
